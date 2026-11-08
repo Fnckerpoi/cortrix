@@ -1,0 +1,23 @@
+# Standalone gateway; start after the main Cortrix deployment.
+# docker compose -f deploy/docker-compose.mcp.yml up -d
+services:
+  mcp-http:
+    image: cortrix/mcp:local
+    container_name: cortrix-mcp-http
+    restart: unless-stopped
+    entrypoint: ["python", "/app/mcp_http.py"]
+    environment:
+      CORTRIX_URL: http://cortrix:8420
+      CORTRIX_NAMESPACE: obsidian-knowledge
+      CORTRIX_MCP_TIMEOUT: "120"
+    ports:
+      - "127.0.0.1:8421:8421"
+    volumes:
+      - ./mcp_http.py:/app/mcp_http.py:ro
+      - ${HOME}/.config/cortrix/mcp-token:/run/secrets/mcp_token:ro
+    networks:
+      - cortrix
+networks:
+  cortrix:
+    external: true
+    name: deploy_default
