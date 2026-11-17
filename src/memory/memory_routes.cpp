@@ -386,8 +386,8 @@ static void RegisterMemoryTransparencyRoutes(httplib::Server& svr, ApiKeyAuth& a
             WriteJsonError(res, Status::NotFound("Namespace '" + ns + "' not found"), rc.request_id); return;
         }
         auto block_store = std::make_shared<memory::MemoryBlockAdapter>(
-            facade.store(), &embedder, &facade.vec_index());
-        memory::transparency::MemoryTransparency transparency(block_store, block_store, op_logger);
+            facade.store(), &embedder, &facade.vec_index(), ns);
+        memory::transparency::MemoryTransparency transparency(block_store, block_store, op_logger, ns);
         memory::transparency::MemoryListFilter filter;
         filter.user_id = user_id;
         filter.include_invalidated = req.get_param_value("status") == "invalidated" ||
@@ -465,8 +465,8 @@ static void RegisterMemoryTransparencyRoutes(httplib::Server& svr, ApiKeyAuth& a
             WriteJsonError(res, Status::NotFound("Namespace '" + ns + "' not found"), rc.request_id); return;
         }
         auto block_store = std::make_shared<memory::MemoryBlockAdapter>(
-            facade.store(), &embedder, &facade.vec_index());
-        memory::transparency::MemoryTransparency transparency(block_store, block_store, op_logger);
+            facade.store(), &embedder, &facade.vec_index(), ns);
+        memory::transparency::MemoryTransparency transparency(block_store, block_store, op_logger, ns);
         memory::transparency::MemoryCreateRequest creq;
         creq.user_id = user_id;
         creq.content = content;
@@ -502,8 +502,8 @@ static void RegisterMemoryTransparencyRoutes(httplib::Server& svr, ApiKeyAuth& a
             WriteJsonError(res, Status::NotFound("Namespace '" + ns + "' not found"), rc.request_id); return;
         }
         auto block_store = std::make_shared<memory::MemoryBlockAdapter>(
-            facade.store(), &embedder, &facade.vec_index());
-        memory::transparency::MemoryTransparency transparency(block_store, block_store, op_logger);
+            facade.store(), &embedder, &facade.vec_index(), ns);
+        memory::transparency::MemoryTransparency transparency(block_store, block_store, op_logger, ns);
         memory::transparency::MemoryEditRequest ereq;
         ereq.memory_id = mem_id;
         ereq.new_content = content;
@@ -534,8 +534,8 @@ static void RegisterMemoryTransparencyRoutes(httplib::Server& svr, ApiKeyAuth& a
             WriteJsonError(res, Status::NotFound("Namespace '" + ns + "' not found"), rc.request_id); return;
         }
         auto block_store = std::make_shared<memory::MemoryBlockAdapter>(
-            facade.store(), &embedder, &facade.vec_index());
-        memory::transparency::MemoryTransparency transparency(block_store, block_store, op_logger);
+            facade.store(), &embedder, &facade.vec_index(), ns);
+        memory::transparency::MemoryTransparency transparency(block_store, block_store, op_logger, ns);
         auto r = transparency.Delete(mem_id, user_id);
         if (!r.ok()) { WriteJsonError(res, r, rc.request_id); return; }
         json resp; resp["block_id"] = mem_id; resp["status"] = "invalidated";
@@ -1016,12 +1016,29 @@ void RegisterMemoryRoutes(
             return;
         }
 
+        // The interaction belongs to the session's owner (the memory_sessions row is
+        // the authoritative user_id, as in EnforceSessionOwner): its metadata is what
+        // the memory searcher's user scope matches, so a body user_id must not be able
+        // to file it under another user. A body user_id that names someone else is
+        // rejected; an absent one means the owner.
+        MemorySession owner_session;
+        if (!mem_store->SessionGet(session_id, owner_session).ok()) {
+            WriteJsonError(res, Status::NotFound("Session not found: " + session_id), rc.request_id);
+            return;
+        }
+        const std::string body_user_id = body.value("user_id", "");
+        if (!body_user_id.empty() && body_user_id != owner_session.user_id) {
+            WriteJsonError(res, Status::InvalidArgument(
+                "user_id must match the session's owner"), rc.request_id);
+            return;
+        }
+
         MemoryWriter writer(*mem_store, spc_mgr, facade.store(), config);
 
         MemoryWriteRequest write_req;
         write_req.session_id = session_id;
         write_req.namespace_name = ns_name;
-        write_req.user_id = body.value("user_id", "");
+        write_req.user_id = owner_session.user_id;
         write_req.query_text = query_text;
         write_req.query_type = body.value("query_type", "chat");
         write_req.response_text = response_text;

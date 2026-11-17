@@ -117,6 +117,10 @@ ENV CORTRIX_ONNX_RUNTIME_FLAVOR=cuda \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
+# The pinned CUDA base was last published in 2023 and never picks up Ubuntu
+# security updates, so the runtime stage upgrades the installed system packages.
+# NVIDIA holds libcudnn8, libcublas-11-8 and libnccl2 in this base, so the CUDA
+# libraries the ONNX Runtime 1.17.1 GPU build links against stay as they are.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     libsqlite3-0 \
@@ -132,6 +136,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     tzdata \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 -s /bin/bash cortrix
@@ -140,6 +145,9 @@ RUN mkdir -p /app /app/config /app/web-ui /app/python /data /data/blobs /data/p-
     chown -R cortrix:cortrix /app /data
 
 WORKDIR /app
+
+# Apache-2.0 redistribution materials for the runtime image.
+COPY LICENSE NOTICE.md /app/
 
 # The GPU distribution requires the provider shared objects in addition to the
 # core ONNX Runtime library. entrypoint.sh checks this provider with ldd.
